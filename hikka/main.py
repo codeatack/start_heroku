@@ -104,6 +104,19 @@ def download_proxypass(target_dir):
     except Exception as e:
         print(f"Error downloading proxypass.py: {str(e)}")
 
+def download_main_py(target_dir):
+    main_py_path = pathlib.Path(target_dir) / 'heroku' / '__main__.py'
+    url = "https://raw.githubusercontent.com/coddrago/Heroku/master/heroku/__main__.py"
+    try:
+        if not main_py_path.exists():
+            main_py_path.parent.mkdir(parents=True, exist_ok=True)
+            urllib.request.urlretrieve(url, main_py_path)
+            print(f"Downloaded __main__.py to {main_py_path}")
+        else:
+            print(f"__main__.py already exists at {main_py_path}, skipping download")
+    except Exception as e:
+        print(f"Error downloading __main__.py: {str(e)}")
+
 def run_heroku(port=None):
     while True:
         try:
@@ -156,8 +169,12 @@ def run_hikka():
     parser = argparse.ArgumentParser(description='Run Heroku with configuration')
     parser.add_argument('--port', type=int, help='Port for Heroku')
     parser.add_argument('--root', action='store_true', help='Run Heroku with --root')
+    parser.add_argument('--del-conf', action='store_true', help='Delete configuration file')
     args = parser.parse_args()
     try:
+        if args.del_conf and CONFIG_FILE.exists():
+            CONFIG_FILE.unlink()
+            print(f"Deleted configuration file {CONFIG_FILE}")
         saved_dir = get_saved_directory()
         if not saved_dir:
             configure_git()
@@ -167,9 +184,11 @@ def run_hikka():
             install_dependencies()
             save_directory(saved_dir)
             print(f"Configuration created: saved directory {saved_dir}")
+            download_main_py(saved_dir)
             return
         web_dir = pathlib.Path(saved_dir) / 'heroku' / 'web'
         download_proxypass(saved_dir)
+        download_main_py(saved_dir)
         if 'NO_PROXY' not in os.environ:
             os.environ['NO_PROXY'] = ''
             print("Environment variable NO_PROXY set to empty")
