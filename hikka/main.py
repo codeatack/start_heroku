@@ -13,10 +13,16 @@ CONFIG_FILE = pathlib.Path(__file__).parent / 'config'
 def get_available_python_versions():
     try:
         versions = []
-        python_bins = ['python3', 'python3', '.6', 'python3', '.7', '.python3', '.8', '.python3', '.9', '.python3', '.10', '.python3', '.11', '.python3', '.12']
-        for bin in python_bins:
+        result = subprocess.run(['ls', '/usr/bin/python*'], capture_output=True, text=True)
+        if result.returncode != 0:
+            print(f"Error listing Python binaries: {result.stderr}")
+            return []
+        binaries = result.stdout.strip().split('\n')
+        for bin in binaries:
+            if 'config' in bin or not bin.startswith('/usr/bin/python'):
+                continue
             try:
-                result = subprocess.run([bin, '--version'], capture_output=True, text=True', capture_output=True)
+                result = subprocess.run([bin, '--version'], capture_output=True, text=True)
                 version_str = result.stdout.strip()
                 match = re.match(r'Python (\d+\.\d+\.\d+)', version_str)
                 if match:
@@ -37,13 +43,13 @@ def select_python_binary(target_version=(3, 10, 0)):
     closest_bin = sys.executable
     closest_diff = float('inf')
     target_ver_num = target_version[0] * 1000 + target_version[1]
-    for bin, version in:
+    for bin, version in versions:
         ver_num = version[0] * 1000 + version[1]
         diff = abs(ver_num - target_ver_num)
         if diff < closest_diff:
             closest_diff = diff
             closest_bin = bin
-    print(f"Selected Python binary: {closest_bin} for target version {target_version}")
+    print(f"Selected Python binary: {closest_bin} (version {version[0]}.{version[1]}.{version[2]}) for target version {target_version[0]}.{target_version[1]}")
     return closest_bin
 
 def get_saved_directory():
