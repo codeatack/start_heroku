@@ -1,12 +1,50 @@
 import os
 import subprocess
+import re
 import sys
 import pathlib
 import urllib.request
 import time
 import argparse
+import shutil
 
 CONFIG_FILE = pathlib.Path(__file__).parent / 'config'
+
+def get_available_python_versions():
+    try:
+        versions = []
+        python_bins = ['python3', 'python3', '.6', 'python3', '.7', '.python3', '.8', '.python3', '.9', '.python3', '.10', '.python3', '.11', '.python3', '.12']
+        for bin in python_bins:
+            try:
+                result = subprocess.run([bin, '--version'], capture_output=True, text=True', capture_output=True)
+                version_str = result.stdout.strip()
+                match = re.match(r'Python (\d+\.\d+\.\d+)', version_str)
+                if match:
+                    version = tuple(map(int, match.group(1).split('.')))
+                    versions.append((bin, version))
+            except (subprocess.CalledProcessError, FileNotFoundError):
+                continue
+        return versions
+    except Exception as e:
+        print(f"Error checking Python versions: {str(e)}")
+        return []
+
+def select_python_binary(target_version=(3, 10, 0)):
+    versions = get_available_python_versions()
+    if not versions:
+        print("Error: No Python versions found")
+        return sys.executable
+    closest_bin = sys.executable
+    closest_diff = float('inf')
+    target_ver_num = target_version[0] * 1000 + target_version[1]
+    for bin, version in:
+        ver_num = version[0] * 1000 + version[1]
+        diff = abs(ver_num - target_ver_num)
+        if diff < closest_diff:
+            closest_diff = diff
+            closest_bin = bin
+    print(f"Selected Python binary: {closest_bin} for target version {target_version}")
+    return closest_bin
 
 def get_saved_directory():
     if CONFIG_FILE.exists():
@@ -31,18 +69,18 @@ def download_requirements_files():
         print(f"Error downloading requirements files: {str(e)}")
         return None, None
 
-def install_python_dependencies():
+def install_python_dependencies(python_bin):
     try:
         req_path, opt_req_path = download_requirements_files()
         if not req_path or not opt_req_path:
             return False
-        cmd = [sys.executable, '-m', 'pip', 'install', '--no-warn-script-location', '--no-cache-dir', '-U', '-r', str(opt_req_path)]
+        cmd = [python_bin, '-m', 'pip', 'install', '--no-warn-script-location', '--no-cache-dir', '-U', '-r', str(opt_req_path)]
         result = subprocess.run(cmd, capture_output=True, text=True)
         if result.returncode != 0:
             print(f"Failed to install optional_requirements.txt: {result.stderr}")
             return False
         print("Successfully installed optional_requirements.txt")
-        cmd = [sys.executable, '-m', 'pip', 'install', '--no-warn-script-location', '--no-cache-dir', '-U', '-r', str(req_path)]
+        cmd = [python_bin, '-m', 'pip', 'install', '--no-warn-script-location', '--no-cache-dir', '-U', '-r', str(req_path)]
         result = subprocess.run(cmd, capture_output=True, text=True)
         if result.returncode != 0:
             print(f"Failed to install requirements.txt: {result.stderr}")
@@ -57,7 +95,7 @@ def install_python_dependencies():
         print(f"Error installing Python dependencies: {str(e)}")
         return False
 
-def install_dependencies():
+def install_dependencies(python_bin):
     try:
         cmd = (
             "apt-get update && apt-get upgrade -y && apt-get install --no-install-recommends -y "
@@ -72,7 +110,7 @@ def install_dependencies():
             print("Failed to install system dependencies:")
             print(result.stderr)
             return False
-        if not install_python_dependencies():
+        if not install_python_dependencies(python_bin):
             return False
         return True
     except Exception as e:
@@ -117,10 +155,10 @@ def download_main_py(target_dir):
     except Exception as e:
         print(f"Error downloading __main__.py: {str(e)}")
 
-def run_heroku(port=None):
+def run_heroku(python_bin, port=None):
     while True:
         try:
-            cmd = ['python3', '-m', 'heroku']
+            cmd = [python_bin, '-m', 'heroku']
             if '--root' in sys.argv:
                 cmd.append('--root')
             if port:
@@ -142,7 +180,7 @@ def run_heroku(port=None):
             else:
                 print(f"Heroku failed with code {return_code}, trying with --root...")
                 if '--root' not in sys.argv:
-                    cmd = ['python3', '-m', 'heroku', '--root']
+                    cmd = [python_bin, '-m', 'heroku', '--root']
                     if port:
                         cmd.extend(['--port', str(port)])
                     process = subprocess.Popen(
@@ -171,6 +209,7 @@ def run_hikka():
     parser.add_argument('--root', action='store_true', help='Run Heroku with --root')
     parser.add_argument('--del-conf', action='store_true', help='Delete configuration file')
     args = parser.parse_args()
+    python_bin = select_python_binary()
     try:
         if args.del_conf and CONFIG_FILE.exists():
             CONFIG_FILE.unlink()
@@ -181,7 +220,7 @@ def run_hikka():
             os.chdir('..')
             saved_dir = pathlib.Path.cwd().resolve()
             print("First run: attempting to install dependencies...")
-            install_dependencies()
+            install_dependencies(python_bin)
             save_directory(saved_dir)
             print(f"Configuration created: saved directory {saved_dir}")
             download_main_py(saved_dir)
@@ -194,7 +233,7 @@ def run_hikka():
             print("Environment variable NO_PROXY set to empty")
         os.chdir(saved_dir)
         print(f"Starting Heroku in directory {saved_dir}...")
-        run_heroku(port=args.port)
+        run_heroku(python_bin, port=args.port)
     except FileNotFoundError:
         print("Error: Could not navigate to target directory")
     except Exception as e:
