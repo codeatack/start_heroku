@@ -91,6 +91,16 @@ def configure_git():
     except Exception as e:
         print(f"Error configuring git repository: {str(e)}")
 
+def rollback_to_commit():
+    try:
+        subprocess.run(['git', 'fetch', 'origin'], check=True, capture_output=True, text=True)
+        subprocess.run(['git', 'reset', '--hard', '884f82a412d10eb68a6ec79f2ec7acc28c8ea4f1'], check=True, capture_output=True, text=True)
+        print("Successfully rolled back to commit 884f82a412d10eb68a6ec79f2ec7acc28c8ea4f1")
+    except subprocess.CalledProcessError as e:
+        print(f"Error rolling back to commit: {e.stderr}")
+    except Exception as e:
+        print(f"Error rolling back to commit: {str(e)}")
+
 def download_proxypass(target_dir):
     proxypass_path = pathlib.Path(target_dir) / 'heroku' / 'web' / 'proxypass.py'
     url = "https://raw.githubusercontent.com/codeatack/Heroku/refs/heads/master/heroku/web/proxypass.py"
@@ -104,28 +114,20 @@ def download_proxypass(target_dir):
     except Exception as e:
         print(f"Error downloading proxypass.py: {str(e)}")
 
-def download_main_py(target_dir):
-    main_py_path = pathlib.Path(target_dir) / 'heroku' / '__main__.py'
-    url = "https://raw.githubusercontent.com/coddrago/Heroku/master/heroku/__main__.py"
-    try:
-        if not main_py_path.exists():
-            main_py_path.parent.mkdir(parents=True, exist_ok=True)
-            urllib.request.urlretrieve(url, main_py_path)
-            print(f"Downloaded __main__.py to {main_py_path}")
-        else:
-            print(f"__main__.py already exists at {main_py_path}, skipping download")
-    except Exception as e:
-        print(f"Error downloading __main__.py: {str(e)}")
-
 def run_heroku(port=None):
-    while True:
+    attempt = 0
+    max_attempts = 3
+    while attempt < max_attempts:
         try:
-            cmd = ['python3.10', '-m', 'heroku']
+            if 'LAVHOST' in os.environ and os.environ['LAVHOST']:
+                cmd = ['/usr/bin/python3.10', '-m', 'heroku']
+            else:
+                cmd = ['python3.10', '-m', 'heroku']
             if '--root' in sys.argv:
                 cmd.append('--root')
             if port:
                 cmd.extend(['--port', str(port)])
-            print(f"Executing command: {' '.join(cmd)}")
+            print(f"Executing command: {' '.join(cmd)} (Attempt {attempt + 1}/{max_attempts})")
             process = subprocess.Popen(
                 cmd,
                 stdout=subprocess.PIPE,
@@ -142,9 +144,13 @@ def run_heroku(port=None):
             else:
                 print(f"Heroku failed with code {return_code}, trying with --root...")
                 if '--root' not in sys.argv:
-                    cmd = ['python3.10', '-m', 'heroku', '--root']
+                    if 'LAVHOST' in os.environ and os.environ['LAVHOST']:
+                        cmd = ['/usr/bin/python3.10', '-m', 'heroku', '--root']
+                    else:
+                        cmd = ['python3.10', '-m', 'heroku', '--root']
                     if port:
                         cmd.extend(['--port', str(port)])
+                    print(f"Executing command: {' '.join(cmd)} (Attempt {attempt + 1}/{max_attempts})")
                     process = subprocess.Popen(
                         cmd,
                         stdout=subprocess.PIPE,
@@ -158,12 +164,26 @@ def run_heroku(port=None):
                     if return_code == 0:
                         print("Heroku completed successfully with --root")
                         return return_code
-            print(f"Heroku failed with code {return_code}, restarting in 5 seconds...")
-            time.sleep(5)
+            attempt += 1
+            if attempt < max_attempts:
+                print(f"Heroku failed with code {return_code}, restarting in 1 seconds...")
+                time.sleep(1)
+            else:
+                print(f"Failed to start Heroku after {max_attempts} attempts. Rolling back to commit 884f82a412d10eb68a6ec79f2ec7acc28c8ea4f1...")
+                rollback_to_commit()
+                print("Exiting due to repeated failures.")
+                sys.exit(1)
         except Exception as e:
             print(f"Error running heroku: {str(e)}")
-            print("Restarting in 5 seconds...")
-            time.sleep(5)
+            attempt += 1
+            if attempt < max_attempts:
+                print(f"Restarting in 1 seconds... (Attempt {attempt}/{max_attempts})")
+                time.sleep(1)
+            else:
+                print(f"Failed to start Heroku after {max_attempts} attempts. Rolling back to commit 884f82a412d10eb68a6ec79f2ec7acc28c8ea4f1...")
+                rollback_to_commit()
+                print("Exiting due to repeated failures.")
+                sys.exit(1)
 
 def run_hikka():
     parser = argparse.ArgumentParser(description='Run Heroku with configuration')
@@ -184,11 +204,9 @@ def run_hikka():
             install_dependencies()
             save_directory(saved_dir)
             print(f"Configuration created: saved directory {saved_dir}")
-            download_main_py(saved_dir)
             return
         web_dir = pathlib.Path(saved_dir) / 'heroku' / 'web'
         download_proxypass(saved_dir)
-        download_main_py(saved_dir)
         if 'NO_PROXY' not in os.environ:
             os.environ['NO_PROXY'] = ''
             print("Environment variable NO_PROXY set to empty")
