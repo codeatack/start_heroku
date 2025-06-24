@@ -4,7 +4,7 @@ setup(
     name='hikka',
     version='0.1.0',
     packages=find_packages(),
-    description='A Python module to run Heroku commands from the parent directory',
+    description='A Python module to run Heroku',
     author='codeatack',
     author_email='codeatack1@gmail.com',
     install_requires=[],
